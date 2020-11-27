@@ -15,7 +15,6 @@ setup(name='fmsutils',
       author='Hamish Innes',
       author_email='hamish.innes@physics.ox.ac.uk',
       url='https://github.com/hinnes97/fmsutils',
-      install_requires= ['numpy', 'cartopy', 'xarray', 'matplotlib'],
       packages=find_packages(),
       ext_modules=[ext1]
 )
