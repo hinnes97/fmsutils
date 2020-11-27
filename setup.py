@@ -10,12 +10,11 @@ ext1 = Extension(name='fmsplot.fort_interp',
 
 setup(name='fmsplot',
       version='1.0',
-      description='Plot GCM output',
+      description='Some interpolation and plotting tools for FMS output',
       author='Hamish Innes',
       author_email='hamish.innes@physics.ox.ac.uk',
-      url='https://github.com/hinnes97/fmsplot',
+      url='https://github.com/hinnes97/fmsutils',
       packages=find_packages(),
-      #package_data={'fmsplot': ['fort_interp.cpython-37m-x86_64-linux-gnu.so']},)
       ext_modules=[ext1]
 )
 
