@@ -1,5 +1,5 @@
 import math
-from fmsplot.ClimateUtilities import * #To get the math methods routines
+from fmsutils.ClimateUtilities import * #To get the math methods routines
 #
 #All units are mks units
 #

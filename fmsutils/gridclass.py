@@ -1,7 +1,7 @@
 import numpy as np
 import xarray as xr
 from cartopy.util import add_cyclic_point
-from fmsplot.fort_interp import fort_interp_mod as fim
+from fmsutils.fort_interp import fort_interp_mod as fim
 
 class grid:
     def __init__(self, data):
