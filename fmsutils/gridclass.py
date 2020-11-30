@@ -2,6 +2,8 @@ import numpy as np
 import xarray as xr
 from cartopy.util import add_cyclic_point
 from fmsutils.fort_interp import fort_interp_mod as fim
+from scipy.integrate import quad
+from scipy.interpolate import interp1d
 
 class grid:
     def __init__(self, data):
@@ -62,7 +64,7 @@ class grid:
         phmax = np.amax(self.data['p_half'].data)
         
         self.pfi = np.logspace(np.log10(pfmin), np.log10(pfmax), self.data['p_full'].shape[1])
-        self.phi = np.logspace(np.log10(pfmin), np.log10(pfmax), self.data['p_half'].shape[1])
+        self.phi = np.logspace(np.log10(phmin), np.log10(phmax), self.data['p_half'].shape[1])
         
         
     def interp_var(self,var):
@@ -80,8 +82,8 @@ class grid:
             self.data[var] = variable
 
         elif 'phalf' in variable.coords:
-            variable.data = fim.interp_data(variable.data,self.data['p_half'],data, self.phi)
-            variable = variable.swap_dims({'pfull':'ph_int'})
+            variable.data = fim.interp_data(variable.data,self.data['p_half'].data, self.phi)
+            variable = variable.swap_dims({'phalf':'ph_int'})
             variable['ph_int'] = ('ph_int', self.phi)
             del variable['phalf']
             self.data[var] = variable
@@ -115,4 +117,29 @@ class grid:
                 self.data[var] = new_da
         self.data = self.data.drop_dims('grid_xt')
         self.data = self.data.rename({'grid_yt':'lat'})
+    
+    def height(self, R, g):
+        """Calculate the height of a layer"""
+        def integrand(logp,interp, R, g):
+            return -R/g * interp(logp)
 
+        h = fim.height(self.data['temp'].data,self.data['p_half'].data,R,g)
+
+#        for t in range(self.nt):
+#            for y in range(self.npy):
+#                for x in range(self.npx):
+                    
+#                    interp = interp1d(np.log(self.data['pf_int'].data), self.data['temp'][t,:,y,x])
+#                    h[t,y,x],err[t,y,x] = quad(integrand, np.log(self.data['pf_int'][-1]), np.log(self.data['pf_int'].sel(pf_int=p, method='nearest')), args=(interp, R, g),epsrel=0.0001)
+
+        coords = self.data['temp'].coords
+        del coords['pf_int']
+        coords = {**coords, 'phalf':self.data['phalf']}
+        dims = ('time', 'phalf', 'lat', 'lon')
+        h = xr.DataArray(data=h,
+                         coords=coords,
+                         dims=dims,
+                          )
+        self.data['h'] = h
+        print(np.amin(h))
+        self.interp_var('h')
