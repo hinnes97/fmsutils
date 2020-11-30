@@ -125,13 +125,6 @@ class grid:
 
         h = fim.height(self.data['temp'].data,self.data['p_half'].data,R,g)
 
-#        for t in range(self.nt):
-#            for y in range(self.npy):
-#                for x in range(self.npx):
-                    
-#                    interp = interp1d(np.log(self.data['pf_int'].data), self.data['temp'][t,:,y,x])
-#                    h[t,y,x],err[t,y,x] = quad(integrand, np.log(self.data['pf_int'][-1]), np.log(self.data['pf_int'].sel(pf_int=p, method='nearest')), args=(interp, R, g),epsrel=0.0001)
-
         coords = self.data['temp'].coords
         del coords['pf_int']
         coords = {**coords, 'phalf':self.data['phalf']}
@@ -141,5 +134,4 @@ class grid:
                          dims=dims,
                           )
         self.data['h'] = h
-        print(np.amin(h))
         self.interp_var('h')
