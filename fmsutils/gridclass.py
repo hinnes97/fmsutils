@@ -28,7 +28,9 @@ class grid:
         self.eterm = np.searchsorted(self.lon, 270)
 
         self.plevels()
-        self.cycle()
+
+        self.data = self.data.rename({'grid_yt':'lat'})
+        self.data = self.data.rename({'grid_xt':'lon'})
 
     def plevels(self):
         """ Work out the 3D pfull and phalf grids and set up the levels to be interpolated to"""
@@ -66,6 +68,7 @@ class grid:
         self.pfi = np.logspace(np.log10(pfmin), np.log10(pfmax), self.data['p_full'].shape[1])
         self.phi = np.logspace(np.log10(phmin), np.log10(phmax), self.data['p_half'].shape[1])
         
+        self.data = self.data.assign_coords({'ph_int':self.phi, 'pf_int':self.pfi})
         
     def interp_var(self,var):
         """Interpolate variables to pressure levels pfi and phi"""
@@ -87,7 +90,7 @@ class grid:
             variable['ph_int'] = ('ph_int', self.phi)
             del variable['phalf']
             self.data[var] = variable
-
+            
     def interp_all(self):
         for var in self.data.data_vars:
             if ('pfull' in self.data[var].coords) or ('phalf' in self.data[var].coords):
@@ -119,14 +122,12 @@ class grid:
         self.data = self.data.rename({'grid_yt':'lat'})
     
     def height(self, R, g):
-        """Calculate the height of a layer"""
-        def integrand(logp,interp, R, g):
-            return -R/g * interp(logp)
+        """Calculate the height of pressure layers"""
 
         h = fim.height(self.data['temp'].data,self.data['p_half'].data,R,g)
 
         coords = self.data['temp'].coords
-        del coords['pf_int']
+        del coords['pfull']
         coords = {**coords, 'phalf':self.data['phalf']}
         dims = ('time', 'phalf', 'lat', 'lon')
         h = xr.DataArray(data=h,
@@ -134,4 +135,3 @@ class grid:
                          dims=dims,
                           )
         self.data['h'] = h
-        self.interp_var('h')

@@ -88,3 +88,29 @@ def make_colorbar(ax, mappable, label=None,**kwargs):
     cax = divider.append_axes(loc, '5%', pad='3%', axes_class=mpl.pyplot.Axes,label=label)
     cbar = ax.get_figure().colorbar(mappable, cax=cax, orientation=orientation)
     cbar.set_label(label)
+
+def split_dat(X,Y):
+    
+    tempy = True
+    boolarray=np.where(Y>0,True,False)
+    ys=[]
+    xs=[]
+    y = []
+    x = []
+    for i in range(len(Y)):
+        if i==0:
+            y.append(Y[i])
+            x.append(X[i])
+        else:
+            if Y[i]*Y[i-1]>0:
+                y.append(Y[i])
+                x.append(X[i])
+            else:
+                ys.append(y)
+                xs.append(x)
+                y = []
+                x=[]
+                y.append(Y[i])
+                x.append(X[i])
+
+    return xs,ys
