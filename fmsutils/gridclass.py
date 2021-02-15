@@ -99,27 +99,44 @@ class grid:
                     print(f"{var} interpolated")
 
 
-    def cycle(self):
+    def wrap(self, var):
         """ Use cartopy function to wrap longitude coordinate so that we don't get an annoying white line at 0 degrees"""
-        for var in self.data.data_vars:
-            if 'grid_xt' in self.data[var].coords:
-                lon_idx = self.data[var].dims.index('grid_xt')
-                wrap_dat,wrap_lon = add_cyclic_point(self.data[var].data, coord=self.data['grid_xt'].data, axis=lon_idx)
+        if 'lon' in self.data[var].coords:
+            lon_idx = self.data[var].dims.index('lon')
+            wrap_dat,wrap_lon = add_cyclic_point(self.data[var].data, coord=self.data['lon'].data, axis=lon_idx)
+            
+            attrs = self.data[var]['lon'].attrs
+            coords = self.data[var].coords
+            del coords['lon']
+            coords = {**coords, 'wlon':('wlon',wrap_lon)}               
 
-                coords = self.data[var].coords
-                del coords['grid_xt']
-                coords = {**coords, 'lon':wrap_lon}               
-
-                dims = (*self.data[var].dims[:-1], 'lon')
+            dims = (*self.data[var].dims[:-1], 'wlon')
                 
-                new_da = xr.DataArray(data=wrap_dat,
-                                      coords=coords,
-                                      attrs = self.data[var].attrs,
-                                      dims=dims)
-                new_da['lon'].attrs = self.data[var]['grid_xt'].attrs
-                self.data[var] = new_da
-        self.data = self.data.drop_dims('grid_xt')
-        self.data = self.data.rename({'grid_yt':'lat'})
+            new_da = xr.DataArray(data=wrap_dat,
+                                  coords=coords,
+                                  attrs = self.data[var].attrs,
+                                  dims=dims)
+            new_da['wlon'].attrs = attrs
+            self.data[var] = new_da
+            
+    def unwrap(self, var):
+        """Remove the wrapped longitude coordinate"""
+        if 'wlon' in self.data[var].coords:
+            lon_idx = self.data[var].dims.index('wlon')
+            newlon = self.data['wlon'][:-1] 
+            newdat=np.take(self.data[var].data,
+                           axis=lon_idx,indices=range(self.npx))
+            attrs = self.data[var]['wlon'].attrs
+            coords = self.data[var].coords
+            del coords['wlon']
+            coords = {**coords, 'lon':('lon',newlon)}
+            dims = (*self.data[var].dims[:-1], 'lon')
+            new_da = xr.DataArray(data=newdat,
+                                  coords=coords,
+                                  attrs = self.data[var].attrs,
+                                  dims=dims)
+            new_da['lon'].attrs = attrs
+            self.data[var] = new_da
     
     def height(self, R, g):
         """Calculate the height of pressure layers"""

@@ -5,3 +5,4 @@
 *.org
 build/
 *.so
+*ipynb*
