@@ -4,6 +4,7 @@ from cartopy.util import add_cyclic_point
 from fmsutils.fort_interp import fort_interp_mod as fim
 from scipy.integrate import quad
 from scipy.interpolate import interp1d
+from windspharm.standard import VectorWind
 
 class grid:
     def __init__(self, data):
@@ -152,3 +153,85 @@ class grid:
                          dims=dims,
                           )
         self.data['h'] = h
+    
+    def calc_divrot(self,R_p):
+        """Calculate the rotational and divergent components 
+        of the velocity field"""
+        
+        u = self.data['ucomp'].data
+        v = self.data['vcomp'].data
+        
+        f_udiv = np.zeros_like(u)
+        f_vdiv = np.zeros_like(u)
+        f_urot = np.zeros_like(u)
+        f_vrot = np.zeros_like(u)
+        
+        if 'time' in self.data['ucomp'].coords:            
+            for l in range(self.npz):
+                for t in range(self.nt):
+                    f_vw = VectorWind(u[t,l], v[t,l], rsphere=R_p)
+                    f_udiv_l, f_vdiv_l, f_urot_l, f_vrot_l = f_vw.helmholtz(truncation=21)
+                    f_udiv[t,l] = f_udiv_l
+                    f_vdiv[t,l] = f_vdiv_l
+                    f_urot[t,l] = f_urot_l
+                    f_vrot[t,l] = f_vrot_l
+            
+        else:
+            for l in range(self.npz):
+                f_vw = VectorWind(f_u[l], f_v[l], rsphere=R_p)
+                f_udiv_l, f_vdiv_l, f_urot_l, f_vrot_l = f_vw.helmholtz(truncation=21)
+                f_udiv[l] = f_udiv_l
+                f_vdiv[l] = f_vdiv_l
+                f_urot[l] = f_urot_l
+                f_vrot[l] = f_vrot_l                
+                
+        udiv = xr.DataArray(data   = f_udiv,
+                            coords = self.data['ucomp'].coords,
+                            dims   = self.data['ucomp'].dims)
+        
+        urot = xr.DataArray(data   = f_urot,
+                            coords = self.data['ucomp'].coords,
+                            dims   = self.data['ucomp'].dims)
+        
+        vdiv = xr.DataArray(data   = f_vdiv,
+                            coords = self.data['vcomp'].coords,
+                            dims   = self.data['vcomp'].dims)
+        
+        vrot = xr.DataArray(data   = f_vrot,
+                            coords = self.data['vcomp'].coords,
+                            dims   = self.data['vcomp'].dims)
+        
+        self.data['udiv'] = udiv; self.data['urot'] = urot
+        self.data['vdiv'] = vdiv; self.data['vrot'] = vrot
+        
+    def eddy(self, dataarray, dim):
+        return dataarray - dataarray.mean(dim)
+    
+    def mpsi(self, R_p, g, tav=False):
+        """Calculate the meridional mass streamfunction, returns streamfunction
+           along with the contribution function to this integral"""
+        if tav == True:
+            vmean = self.data['vcomp'].mean(('time','lon'))
+        else:
+            vmean = self.data['vcomp'].mean('lon')
+            
+        dp  = self.data['ph_int'].diff('ph_int')
+        dp  = dp.swap_dims({'ph_int':'pf_int'})
+        cos = xr.ufuncs.cos(xr.ufuncs.radians(self.data['lat']))*2*np.pi*R_p/g
+        
+        contrib = cos*mean*dp
+        result  = contrib.cumsum('pf_int')
+        
+        result = result.pad({'pf_int':(1,0)})
+        
+        result = result.swap_dims({'pf_int':'ph_int'})
+        
+        self.data['mpsi'] = result
+        self.data['mpsi_contrib'] = contrib
+                  
+        
+        
+
+        
+        
+        
