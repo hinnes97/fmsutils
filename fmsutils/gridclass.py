@@ -128,61 +128,6 @@ class grid:
                 if (var != 'pk') and (var != 'bk'):
                     self.interp_var(var)
                     print(f"{var} interpolated")
-
-
-    def wrap(self, var):
-        """ Use cartopy function to wrap longitude coordinate so that we don't get an annoying white line at 0 degrees"""
-        if 'lon' in self.data[var].coords:
-            l = 'lon'
-        elif 'lon_TL' in self.data[var].coords:
-            l = 'lon_TL' 
-        else:
-            raise KeyError('No lon or lon_TL in coords')
-            
-        lon_idx = self.data[var].dims.index(l)
-        wrap_dat,wrap_lon = add_cyclic_point(self.data[var].data, coord=self.data[l].data, axis=lon_idx)
-
-        attrs = self.data[var][l].attrs
-        coords = self.data[var].coords
-        del coords[l]
-        coords = {**coords, 'w'+l:('w'+l,wrap_lon)}               
-
-        dims = (*self.data[var].dims[:-1], 'w'+l)
-
-        new_da = xr.DataArray(data=wrap_dat,
-                              coords=coords,
-                              attrs = self.data[var].attrs,
-                              dims=dims)
-        new_da['w'+l].attrs = attrs
-        return new_da
-            
-    def unwrap(self, var):
-        """Remove the wrapped longitude coordinate"""
-        if 'wlon' in self.data[var].coords:
-            wl = 'wlon'
-            l ='lon'
-        elif 'wlon_TL' in self.data[var].coords:
-            wl = 'wlon_TL' 
-            l = 'lon_TL'
-        else:
-            raise KeyError('No lon or lon_TL in coords')
-            
-        if wl in self.data[var].coords:
-            lon_idx = self.data[var].dims.index(wl)
-            newlon = self.data[wl][:-1] 
-            newdat=np.take(self.data[var].data,
-                           axis=lon_idx,indices=range(self.npx))
-            attrs = self.data[var][wl].attrs
-            coords = self.data[var].coords
-            del coords[wl]
-            coords = {**coords, l:(l,newlon)}
-            dims = (*self.data[var].dims[:-1], l)
-            new_da = xr.DataArray(data=newdat,
-                                  coords=coords,
-                                  attrs = self.data[var].attrs,
-                                  dims=dims)
-            new_da[l].attrs = attrs
-            self.data[var] = new_da
     
     def height(self, virt=False, eps = phys.H2.R/phys.H2O.R):
         """Calculate the height of pressure layers"""
@@ -483,6 +428,58 @@ class grid:
 
         return data_interp 
         
-        
+    def wrap(self, var):
+        """ Use cartopy function to wrap longitude coordinate so that we don't get an annoying white line at 0 degrees"""
+        if 'lon' in self.data[var].coords:
+            l = 'lon'
+        elif 'lon_TL' in self.data[var].coords:
+            l = 'lon_TL' 
+        else:
+            raise KeyError('No lon or lon_TL in coords')
+            
+        lon_idx = self.data[var].dims.index(l)
+        wrap_dat,wrap_lon = add_cyclic_point(self.data[var].data, coord=self.data[l].data, axis=lon_idx)
+
+        attrs = self.data[var][l].attrs
+        coords = self.data[var].coords
+        del coords[l]
+        coords = {**coords, 'w'+l:('w'+l,wrap_lon)}               
+
+        dims = (*self.data[var].dims[:-1], 'w'+l)
+
+        new_da = xr.DataArray(data=wrap_dat,
+                              coords=coords,
+                              attrs = self.data[var].attrs,
+                              dims=dims)
+        new_da['w'+l].attrs = attrs
+        return new_da
+            
+    def unwrap(self, var):
+        """Remove the wrapped longitude coordinate"""
+        if 'wlon' in self.data[var].coords:
+            wl = 'wlon'
+            l ='lon'
+        elif 'wlon_TL' in self.data[var].coords:
+            wl = 'wlon_TL' 
+            l = 'lon_TL'
+        else:
+            raise KeyError('No lon or lon_TL in coords')
+            
+        if wl in self.data[var].coords:
+            lon_idx = self.data[var].dims.index(wl)
+            newlon = self.data[wl][:-1] 
+            newdat=np.take(self.data[var].data,
+                           axis=lon_idx,indices=range(self.npx))
+            attrs = self.data[var][wl].attrs
+            coords = self.data[var].coords
+            del coords[wl]
+            coords = {**coords, l:(l,newlon)}
+            dims = (*self.data[var].dims[:-1], l)
+            new_da = xr.DataArray(data=newdat,
+                                  coords=coords,
+                                  attrs = self.data[var].attrs,
+                                  dims=dims)
+            new_da[l].attrs = attrs
+            self.data[var] = new_da        
 
         
