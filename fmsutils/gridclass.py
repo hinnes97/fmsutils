@@ -1,5 +1,6 @@
 import numpy as np
 import xarray as xr
+import fmsutils.phys as phys
 from cartopy.util import add_cyclic_point
 from fmsutils.fort_interp import fort_interp_mod as fim
 from scipy.integrate import quad
@@ -8,10 +9,14 @@ from scipy.interpolate import griddata
 from windspharm.standard import VectorWind
 
 class grid:
-    def __init__(self, data, lon_ss=0):
+    def __init__(self, data, lon_ss=0, R_p=6371e3, g=9.81, R=287.,pref=1.e6):
         
         self.data = data
-
+        self.R_p  = R_p
+        self.g    = g
+        self.R    = R
+        self.pref = pref
+        
         if 'grid_xt' in data.coords:
             self.data = self.data.rename({'grid_xt':'lon'})
             self.npx = len(self.data['lon'])
@@ -27,9 +32,9 @@ class grid:
         if 'time' in data.coords:
             self.nt = len(data['time'])
         
+        self.ps = self.data['ps']
         self.pk = self.data['pk'][:]
         self.bk = self.data['bk'][:]
-        self.ps = self.data['ps'][:][:,:,:]
         self.lon_ss = lon_ss
 
         self.npz  = len(self.pk) - 1
@@ -50,9 +55,16 @@ class grid:
         self.phalf = self.pk + self.ps*self.bk
 
         if 'lon' in self.data.coords and 'lat' in self.data.coords:
-            self.phalf= self.phalf.transpose("time", "phalf", "lat", "lon")
+            if 'time' in self.data.coords:
+                self.phalf= self.phalf.transpose("time", "phalf", "lat", "lon")
+            else:
+                self.phalf= self.phalf.transpose("phalf", "lat", "lon")
         elif 'lon_TL' in self.data.coords and 'lat_TL' in self.data.coords:
-            self.phalf=self.phalf.transpose('time', 'phalf','lat_TL','lon_TL')
+            if 'time' in self.data.coords:
+                self.phalf= self.phalf.transpose("time", "phalf", "lat_TL", "lon_TL")
+            else:
+                self.phalf= self.phalf.transpose("phalf", "lat_TL", "lon_TL")
+
         
         self.phalf = self.phalf.swap_dims({"phalf":"ph_level"})
         del self.phalf["phalf"]
@@ -73,10 +85,13 @@ class grid:
         phmin = np.amin(self.data['p_half'].data)
         phmax = np.amax(self.data['p_half'].data)
         
-        self.pfi = np.logspace(np.log10(pfmin), np.log10(pfmax), self.data['p_full'].shape[1])
-        self.phi = np.logspace(np.log10(phmin), np.log10(phmax), self.data['p_half'].shape[1])
+        self.phi = self.pk + self.bk*self.pref
+        self.pfi = (self.phi.data[1:] - self.phi.data[:-1])/(np.log(self.phi.data[1:]) - np.log(self.phi.data[:-1]))
         
-        self.data = self.data.assign_coords({'ph_int':self.phi, 'pf_int':self.pfi})
+        #self.pfi = np.logspace(np.log10(pfmin), np.log10(pfmax), self.data['p_full'].shape[1])
+        #self.phi = np.logspace(np.log10(phmin), np.log10(phmax), self.data['p_half'].shape[1])
+        
+        self.data = self.data.assign_coords({'ph_int':('ph_int',self.phi), 'pf_int':('pf_int',self.pfi)})
         
     def interp_vars(self,*variables):
         
@@ -88,14 +103,20 @@ class grid:
                  print('var not in dataset')
             
             if 'pfull' in variable.coords:
-                variable.data = fim.interp_data(variable.data,self.data['p_full'].data, self.pfi)
+                if 'time' in variable.coords:
+                    variable.data = fim.interp_data(variable.data,self.data['p_full'].data, self.pfi)
+                else:
+                    variable.data = fim.interp_data_no_t(variable.data,self.data['p_full'].data, self.pfi)
                 variable = variable.swap_dims({'pfull':'pf_int'})
                 variable['pf_int'] = ('pf_int', self.pfi)
                 del variable['pfull']
                 self.data[var] = variable
 
             elif 'phalf' in variable.coords:
-                variable.data = fim.interp_data(variable.data,self.data['p_half'].data, self.phi)
+                if 'time' in variable.coords:
+                    variable.data = fim.interp_data(variable.data,self.data['p_half'].data, self.phi)
+                else:
+                    variable.data = fim.interp_data_no_t(variable.data, self.data['p_half'].data, self.phi)
                 variable = variable.swap_dims({'phalf':'ph_int'})
                 variable['ph_int'] = ('ph_int', self.phi)
                 del variable['phalf']
@@ -133,25 +154,27 @@ class grid:
                               attrs = self.data[var].attrs,
                               dims=dims)
         new_da['w'+l].attrs = attrs
-        self.data[var] = new_da
+        return new_da
             
     def unwrap(self, var):
         """Remove the wrapped longitude coordinate"""
-        if 'lon' in self.data[var].coords:
-            l = 'lon'
-        elif 'lon_TL' in self.data[var].coords:
-            l = 'lon_TL' 
+        if 'wlon' in self.data[var].coords:
+            wl = 'wlon'
+            l ='lon'
+        elif 'wlon_TL' in self.data[var].coords:
+            wl = 'wlon_TL' 
+            l = 'lon_TL'
         else:
             raise KeyError('No lon or lon_TL in coords')
             
-        if 'w'+l in self.data[var].coords:
-            lon_idx = self.data[var].dims.index('w'+l)
-            newlon = self.data['w'+l][:-1] 
+        if wl in self.data[var].coords:
+            lon_idx = self.data[var].dims.index(wl)
+            newlon = self.data[wl][:-1] 
             newdat=np.take(self.data[var].data,
                            axis=lon_idx,indices=range(self.npx))
-            attrs = self.data[var]['w'+l].attrs
+            attrs = self.data[var][wl].attrs
             coords = self.data[var].coords
-            del coords['w'+l]
+            del coords[wl]
             coords = {**coords, l:(l,newlon)}
             dims = (*self.data[var].dims[:-1], l)
             new_da = xr.DataArray(data=newdat,
@@ -161,11 +184,19 @@ class grid:
             new_da[l].attrs = attrs
             self.data[var] = new_da
     
-    def height(self, R, g):
+    def height(self, virt=False, eps = phys.H2.R/phys.H2O.R):
         """Calculate the height of pressure layers"""
-
-        h = fim.height(self.data['temp'].data,self.data['p_half'].data,R,g)
-
+        
+        if virt==True:
+            T = self.Tvir(self.data['temp'].data, self.data['vapour'].data, eps=eps).data
+        else:
+            T = self.data['temp'].data
+        
+        if 'time' in self.data['temp'].coords:
+            h = fim.height(T,self.data['p_half'].data,self.R,self.g)
+        else:
+            h = fim.height_no_t(T,self.data['p_half'].data,self.R,self.g)
+            
         coords = self.data['temp'].coords
         del coords['pfull']
         coords = {**coords, 'phalf':self.data['phalf']}
@@ -176,12 +207,18 @@ class grid:
                           )
         self.data['h'] = h
     
-    def calc_divrot(self,R_p):
+    def Tvir(self,T,q,eps):
+         return T*(1 + (1/eps - 1)*q)
+
+    def calc_divrot(self,truncation=21):
         """Calculate the rotational and divergent components 
         of the velocity field"""
         
         # N.B. latitude has to be ordered North to South so flip, then reflip
-        lataxis = self.data['ucomp'].dims.index('lat')
+        if 'lat' in self.data['ucomp'].coords:
+            lataxis = self.data['ucomp'].dims.index('lat')
+        elif 'lat_TL' in self.data['ucomp'].coords:
+            lataxis = self.data['ucomp'].dims.index('lat_TL')
         
         u = np.flip(self.data['ucomp'].data,axis=lataxis)
         v = np.flip(self.data['vcomp'].data,axis=lataxis)
@@ -194,8 +231,8 @@ class grid:
         if 'time' in self.data['ucomp'].coords:            
             for l in range(self.npz):
                 for t in range(self.nt):
-                    f_vw = VectorWind(u[t,l], v[t,l], rsphere=R_p)
-                    f_udiv_l, f_vdiv_l, f_urot_l, f_vrot_l = f_vw.helmholtz(truncation=21)
+                    f_vw = VectorWind(u[t,l], v[t,l], rsphere=self.R_p)
+                    f_udiv_l, f_vdiv_l, f_urot_l, f_vrot_l = f_vw.helmholtz(truncation=truncation)
                     f_udiv[t,l] = f_udiv_l
                     f_vdiv[t,l] = f_vdiv_l
                     f_urot[t,l] = f_urot_l
@@ -203,8 +240,8 @@ class grid:
             
         else:
             for l in range(self.npz):
-                f_vw = VectorWind(u[l], v[l], rsphere=R_p)
-                f_udiv_l, f_vdiv_l, f_urot_l, f_vrot_l = f_vw.helmholtz(truncation=21)
+                f_vw = VectorWind(u[l], v[l], rsphere=self.R_p)
+                f_udiv_l, f_vdiv_l, f_urot_l, f_vrot_l = f_vw.helmholtz(truncation=truncation)
                 f_udiv[l] = f_udiv_l
                 f_vdiv[l] = f_vdiv_l
                 f_urot[l] = f_urot_l
@@ -234,24 +271,34 @@ class grid:
     def eddy(self, dataarray, dim):
         return dataarray - dataarray.mean(dim)
     
-    def mpsi(self, R_p, g, tav=False):
+    def mpsi(self,tav=False):
         """Calculate the meridional mass streamfunction, returns streamfunction
            along with the contribution function to this integral"""
+        
+        if 'lon' in self.data.coords:
+            lon = 'lon'
+            lat = 'lat'
+        elif 'lon_TL' in self.data.coords:
+            lon = 'lon_TL'
+            lat = 'lat_TL'
+            
         if tav == True:
-            vmean = self.data['vcomp'].mean(('time','lon'))
+            vmean = self.data['vcomp'].mean(('time',lon))
         else:
-            vmean = self.data['vcomp'].mean('lon')
+            vmean = self.data['vcomp'].mean(lon)
             
         dp  = self.data['ph_int'].diff('ph_int')
         dp  = dp.swap_dims({'ph_int':'pf_int'})
-        cos = xr.ufuncs.cos(xr.ufuncs.radians(self.data['lat']))*2*np.pi*R_p/g
+        cos = xr.ufuncs.cos(xr.ufuncs.radians(self.data[lat]))*2*np.pi*self.R_p/self.g
         
-        contrib = cos*mean*dp
+        contrib = cos*vmean*dp
         result  = contrib.cumsum('pf_int')
         
-        result = result.pad({'pf_int':(1,0)})
+        result = result.pad({'pf_int':(1,0)}, constant_values=0)
         
         result = result.swap_dims({'pf_int':'ph_int'})
+        result['ph_int'] = ('ph_int', self.data['ph_int'].data)
+        del result['pf_int']
         
         self.data['mpsi'] = result
         self.data['mpsi_contrib'] = contrib
@@ -264,19 +311,22 @@ class grid:
             # Set up an empty dataset
             ds = xr.Dataset()
             
-            filled_ds = self.tidal_locked(self, lon_TL, lat_TL, ds, *variables, 'ps')
+            # Convert degrees to radians
+            lon_TL, lat_TL = np.radians(lon_TL), np.radians(lat_TL)
+            
+            filled_ds = self.tidal_locked(self, lon_TL, lat_TL, ds, *variables, 'ps', 'pfull','phalf')
             
             filled_ds['bk'] = self.data['bk']
             filled_ds['pk'] = self.data['pk']
                
-            return self.create_TL_grid(filled_ds)
+            return self.create_TL_grid(filled_ds, g=self.g, R_p=self.R_p, R=self.R)
     
     def add_to_TL_grid(self, latlon_grid, *variables):
         """Converts variables from latlon grid and adds to TL 
            grid class instance"""
         ds = self.data
         
-        lon_TL, lat_TL = self.data['lon_TL'].data, self.data['lat_TL'].data
+        lon_TL, lat_TL = np.radians(self.data['lon_TL'].data), np.radians(self.data['lat_TL'].data)
         
         filled_ds = self.tidal_locked(latlon_grid, lon_TL, lat_TL, ds, *variables)
         
@@ -284,9 +334,9 @@ class grid:
     
     @classmethod
     def tidal_locked(cls, grd, lon_TL, lat_TL, ds, *variables):
-        lat, lon = grd.data['lat'].data, grd.data['lon'].data
-            
-        lat_TL_orig, lon_TL_orig = cls.transform_latlon_to_TL(lat, lon,lon_ss=grd.lon_ss)
+        lat, lon = np.radians(grd.data['lat'].data), np.radians(grd.data['lon'].data)
+         
+        #lat_TL_orig, lon_TL_orig = cls.transform_latlon_to_TL(lat, lon,lon_ss=grd.lon_ss)
 
         # Treat vector winds differently
         vector_quantities = ['ucomp', 'vcomp', 'udiv','vdiv','urot','vrot']
@@ -295,31 +345,30 @@ class grid:
             if var not in vector_quantities:
                 if ('lon' in grd.data[var].coords) and ('lat' in grd.data[var].coords):
                     raw_array = cls.interpolate_to_TL_ndim(lat,lon,lat_TL[:,None],lon_TL[None,:],grd.data[var].data,lon_ss=grd.lon_ss,method="nearest")
-
                     coords = grd.data[var].coords
                     del coords['lat']; del coords['lon']
-                    coords = {**coords, 'lat_TL':lat_TL, 'lon_TL':lon_TL}
+                    coords = {**coords, 'lat_TL':np.degrees(lat_TL), 'lon_TL':np.degrees(lon_TL)}
                     coords = list(coords.items())
-
-                    da = xr.DataArray(data=raw_array, 
+                    
+                    da = xr.DataArray(data=raw_array.squeeze(), 
                                       coords=coords)
 
                     ds[var] = da
 
                 else:
-                    ds[var] = self.data[var]
+                    ds[var] = grd.data[var]
            
         for wind in [('ucomp','vcomp'), ('udiv','vdiv'), ('urot','vrot')]:
             if wind[0] in variables and wind[1] in variables:
                 u,v = grd.data[wind[0]].data, grd.data[wind[1]].data
                 u_TL, v_TL = cls.transform_velocities_to_TL_interp(u,v,
-                                                  lat,lon,lat_TL[:,None],
+                                                  lat,                                                                       lon,lat_TL[:,None],
                                                   lon_TL[None,:],
                                            lon_ss=grd.lon_ss,method="nearest")
 
                 coords = grd.data[wind[0]].coords
                 del coords['lat']; del coords['lon']
-                coords = {**coords, 'lat_TL':lat_TL, 'lon_TL':lon_TL}
+                coords = {**coords, 'lat_TL':np.degrees(lat_TL), 'lon_TL':np.degrees(lon_TL)}
                 coords = list(coords.items())
 
                 uda = xr.DataArray(data=u_TL,
@@ -334,11 +383,11 @@ class grid:
             elif (wind[0] in variables) ^ (wind[1] in variables):
                 print('Warning: require both u and v velocities to transform to TL coordinates')
             
-            return ds
+        return ds
 
     @classmethod
-    def create_TL_grid(cls,dataset):
-        return cls(dataset)              
+    def create_TL_grid(cls,dataset,g,R_p,R):
+        return cls(dataset,g=g,R_p=R_p,R=R)              
     
     @classmethod   
     def transform_latlon_to_TL(cls,lat_tmp,lon_tmp,lon_ss=0.):
@@ -409,9 +458,9 @@ class grid:
         # Uses above, but for N-dim data.
         # Also assume lat/lon are last two dims.
         if data.ndim==2:
-            data_interp = cls.interpolate_to_TL(lat,lon,\
+            data_interp = np.squeeze(cls.interpolate_to_TL(lat,lon,\
                                             lat_TL[None,:],\
-                                            lon_TL[:,None],data,lon_ss,method).T
+                                            lon_TL[:,None],data,lon_ss,method))
         elif data.ndim==3:
             data_interp = np.zeros((data.shape[0],lat_TL.size,lon_TL.size))
             for i in range(data.shape[0]):
