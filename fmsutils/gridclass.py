@@ -139,13 +139,14 @@ class grid:
         
         if 'time' in self.data['temp'].coords:
             h = fim.height(T,self.data['p_half'].data,self.R,self.g)
+            dims = ('time', 'phalf', 'lat', 'lon')
         else:
             h = fim.height_no_t(T,self.data['p_half'].data,self.R,self.g)
+            dims = ('phalf', 'lat', 'lon')
             
         coords = self.data['temp'].coords
         del coords['pfull']
         coords = {**coords, 'phalf':self.data['phalf']}
-        dims = ('time', 'phalf', 'lat', 'lon')
         h = xr.DataArray(data=h,
                          coords=coords,
                          dims=dims,
