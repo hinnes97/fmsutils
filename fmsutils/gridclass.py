@@ -22,12 +22,16 @@ class grid:
             self.npx = len(self.data['lon'])
         elif 'lon_TL' in data.coords:
             self.npx = len(self.data['lon_TL'])
-                           
+        elif 'lon' in data.coords:
+            self.npx = len(self.data['lon'])
+            
         if 'grid_yt' in data.coords:
             self.data = self.data.rename({'grid_yt':'lat'})
             self.npy = len(self.data['lat'])
         elif 'lat_TL' in data.coords:
             self.npy = len(self.data['lat_TL'])
+        elif 'lat' in data.coords:
+            self.npy = len(self.data['lat'])
             
         if 'time' in data.coords:
             self.nt = len(data['time'])
